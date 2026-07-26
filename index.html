@@ -464,6 +464,7 @@ let state = {
   events: [],
   reminders: [],
   msgType: 'designer',
+  sendMode: 'queue',
   selectedGuests: [],
   selectedEventId: null,
   installPrompt: null,
@@ -686,6 +687,9 @@ function renderEvents() {
 function renderCompose() {
   const ev = state.selectedEventId ? eventById(state.selectedEventId) : state.events[0];
   const previewGuest = state.guests[0] || { name:'Guest Name' };
+  const targets = state.selectedGuests.length
+    ? state.guests.filter(g => state.selectedGuests.includes(g.id))
+    : state.guests;
 
   const eventOptions = state.events.map(e =>
     `<option value="${e.id}" ${state.selectedEventId==e.id?'selected':''}>${e.name}</option>`).join('');
@@ -695,12 +699,101 @@ function renderCompose() {
 
   const previewHTML = ev ? buildPreviewBubble(previewGuest, ev) : '<p style="color:#aaa;padding:10px">Select an event above</p>';
 
+  // ── Broadcast panel ──
+  const broadcastPanel = ev ? (() => {
+    const numbers = targets.map(g => g.phone).join('\n');
+    const msg = buildMsg(targets[0] || previewGuest, ev);
+    const steps = [
+      { icon:'📋', title:'Copy numbers below', desc:'Tap "Copy all numbers" — all selected guest numbers are copied to your clipboard.' },
+      { icon:'📱', title:'Open WhatsApp', desc:'Go to WhatsApp → tap the Menu (⋮) → select <strong>New broadcast</strong>.' },
+      { icon:'➕', title:'Add contacts', desc:'Paste or type the numbers one by one. Only contacts saved in your phone receive broadcast messages.' },
+      { icon:'✅', title:'Create the list', desc:'Tap the green tick/check. Your broadcast list is saved — you can reuse it for every event!' },
+      { icon:'💬', title:'Paste & send message', desc:'Tap "Copy message" below, open your broadcast list, paste, and hit send. Done!' },
+    ];
+    return `
+      <!-- Numbers block -->
+      <div class="compose-section">
+        <span class="compose-label">Step 1 — Copy guest numbers</span>
+        <div style="background:#f0f8f0;border:1px solid #b7dfb7;border-radius:10px;padding:12px;margin-bottom:8px;font-size:13px;color:#2d4a2d;line-height:2;word-break:break-all">
+          ${targets.map(g=>`<span style="display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid #cde8cd;border-radius:6px;padding:3px 8px;margin:2px;font-size:12px"><span style="color:#888">${initials(g.name)}</span> ${g.phone}</span>`).join('')}
+        </div>
+        <button class="btn btn-full" style="background:#25d366;color:#fff;padding:11px;font-size:14px" onclick="copyNumbers()">
+          <i class="ti ti-copy"></i> Copy all ${targets.length} numbers
+        </button>
+      </div>
+
+      <!-- Message copy -->
+      <div class="compose-section">
+        <span class="compose-label">Step 5 — Copy your message</span>
+        <div style="background:#e5ddd5;border-radius:10px;padding:12px;font-size:12px;color:#444;line-height:1.6;max-height:120px;overflow:hidden;position:relative;margin-bottom:8px">
+          ${msg.replace(/\n/g,'<br>').replace(/\*(.*?)\*/g,'<strong>$1</strong>')}
+          <div style="position:absolute;bottom:0;left:0;right:0;height:32px;background:linear-gradient(transparent,#e5ddd5)"></div>
+        </div>
+        <button class="btn btn-full" style="background:#075e54;color:#fff;padding:11px;font-size:14px" onclick="copyMessage()">
+          <i class="ti ti-copy"></i> Copy message text
+        </button>
+      </div>
+
+      <!-- How-to steps -->
+      <div class="compose-section">
+        <span class="compose-label">How to create a broadcast list in WhatsApp</span>
+        <div style="background:#fff;border:1px solid #e8e0d8;border-radius:12px;overflow:hidden">
+          ${steps.map((s,i)=>`
+            <div style="display:flex;gap:12px;padding:12px 14px;${i<steps.length-1?'border-bottom:1px solid #f5f1ed':''}">
+              <div style="font-size:22px;flex-shrink:0;margin-top:1px">${s.icon}</div>
+              <div>
+                <div style="font-weight:600;font-size:13px;color:#2d2a26;margin-bottom:2px">${s.title}</div>
+                <div style="font-size:12px;color:#777;line-height:1.5">${s.desc}</div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- Important note -->
+      <div class="compose-section">
+        <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:10px;padding:12px 14px;font-size:12px;color:#5a4000;line-height:1.6">
+          <div style="font-weight:700;margin-bottom:4px">⚠️ Important — WhatsApp Broadcast rule</div>
+          A guest will only receive your broadcast message if they have <strong>saved your number</strong> in their phone contacts. If they haven't saved your number, the message won't reach them. Ask close family to save your number first!
+        </div>
+      </div>
+
+      <!-- Open WhatsApp shortcut -->
+      <div style="padding:0 14px 14px">
+        <a href="https://wa.me" target="_blank" style="text-decoration:none">
+          <button class="btn btn-green btn-full" style="font-size:15px;padding:14px">
+            <i class="ti ti-brand-whatsapp"></i> Open WhatsApp now
+          </button>
+        </a>
+        <p style="font-size:11px;color:#aaa;text-align:center;margin-top:6px">Opens WhatsApp — go to Menu → New broadcast</p>
+      </div>`;
+  })() : '';
+
   return `
+    <!-- Send mode toggle -->
     <div class="compose-section" style="margin-top:14px">
+      <span class="compose-label">How to send</span>
+      <div class="toggle-group">
+        <div class="toggle-item ${state.sendMode==='queue'?'active':''}" onclick="state.sendMode='queue';render()">
+          <i class="ti ti-send"></i> One by one
+        </div>
+        <div class="toggle-item ${state.sendMode==='broadcast'?'active':''}" onclick="state.sendMode='broadcast';render()">
+          <i class="ti ti-speakerphone"></i> Broadcast list
+        </div>
+      </div>
+      <p style="font-size:11px;color:#aaa;margin-top:6px">
+        ${state.sendMode==='queue'
+          ? 'Opens WhatsApp for each guest in a guided queue'
+          : 'Copy numbers &amp; message to create a WhatsApp broadcast list'}
+      </p>
+    </div>
+
+    <!-- Event selector -->
+    <div class="compose-section">
       <span class="compose-label">Event</span>
       <select onchange="state.selectedEventId=parseInt(this.value);render()">${eventOptions}</select>
     </div>
 
+    <!-- Message style -->
     <div class="compose-section">
       <span class="compose-label">Message style</span>
       <div class="toggle-group">
@@ -709,35 +802,38 @@ function renderCompose() {
       </div>
     </div>
 
+    <!-- Guest selector -->
     <div class="compose-section">
       <span class="compose-label">Select guests</span>
       <div class="chip-wrap">
         <span class="chip sel" onclick="selectAll()" style="background:#9c6b4e">All (${state.guests.length})</span>
         ${guestChips}
       </div>
-      <p style="font-size:11px;color:#aaa;margin-top:6px">${state.selectedGuests.length || state.guests.length} selected</p>
+      <p style="font-size:11px;color:#aaa;margin-top:6px">${targets.length} selected</p>
     </div>
 
-    <div class="compose-section">
-      <span class="compose-label">Preview</span>
-    </div>
-    <div class="wa-preview">
-      <div class="wa-topbar">
-        <div class="avatar" style="width:32px;height:32px;font-size:12px;background:#128c7e;flex-shrink:0">${initials(previewGuest.name)}</div>
-        <div><div class="wt-name">${previewGuest.name}</div><div class="wt-status">online</div></div>
+    ${state.sendMode === 'broadcast' ? broadcastPanel : `
+      <!-- Preview -->
+      <div class="compose-section">
+        <span class="compose-label">Preview</span>
       </div>
-      <div class="wa-body">
-        ${previewHTML}
-        <div class="wa-time">✓✓ just now</div>
+      <div class="wa-preview">
+        <div class="wa-topbar">
+          <div class="avatar" style="width:32px;height:32px;font-size:12px;background:#128c7e;flex-shrink:0">${initials(previewGuest.name)}</div>
+          <div><div class="wt-name">${previewGuest.name}</div><div class="wt-status">online</div></div>
+        </div>
+        <div class="wa-body">
+          ${previewHTML}
+          <div class="wa-time">✓✓ just now</div>
+        </div>
       </div>
-    </div>
-
-    <div style="padding:0 14px 14px">
-      <button class="btn btn-green btn-full" onclick="sendAll()" style="font-size:15px;padding:14px">
-        <i class="ti ti-brand-whatsapp"></i> Open WhatsApp for ${state.selectedGuests.length || state.guests.length} guest${(state.selectedGuests.length || state.guests.length)>1?'s':''}
-      </button>
-      <p style="font-size:11px;color:#aaa;text-align:center;margin-top:6px">Opens WhatsApp with your message pre-filled for each guest</p>
-    </div>`;
+      <div style="padding:0 14px 14px;margin-top:12px">
+        <button class="btn btn-green btn-full" onclick="sendAll()" style="font-size:15px;padding:14px">
+          <i class="ti ti-brand-whatsapp"></i> Send to ${targets.length} guest${targets.length!==1?'s':''}
+        </button>
+        <p style="font-size:11px;color:#aaa;text-align:center;margin-top:6px">Opens WhatsApp with message pre-filled, one guest at a time</p>
+      </div>
+    `}`;
 }
 
 function buildPreviewBubble(g, ev) {
@@ -825,36 +921,188 @@ function selectAll() {
   render();
 }
 
+function copyNumbers() {
+  const targets = state.selectedGuests.length
+    ? state.guests.filter(g => state.selectedGuests.includes(g.id))
+    : state.guests;
+  const text = targets.map(g => g.phone).join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    toast(`<i class="ti ti-check"></i> ${targets.length} numbers copied!`, 'green');
+  }).catch(() => {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast(`<i class="ti ti-check"></i> ${targets.length} numbers copied!`, 'green');
+  });
+}
+
+function copyMessage() {
+  const ev = eventById(state.selectedEventId) || state.events[0];
+  const targets = state.selectedGuests.length
+    ? state.guests.filter(g => state.selectedGuests.includes(g.id))
+    : state.guests;
+  const g = targets[0] || state.guests[0];
+  if(!ev || !g) { toast('Please select an event'); return; }
+  // For broadcast, use a generic greeting instead of a specific name
+  const broadcastMsg = buildMsg({ name:'everyone' }, ev)
+    .replace(/Dear everyone,/gi, 'Dear all,');
+  navigator.clipboard.writeText(broadcastMsg).then(() => {
+    toast('<i class="ti ti-check"></i> Message copied! Paste it in WhatsApp.', 'green');
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = broadcastMsg;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast('<i class="ti ti-check"></i> Message copied!', 'green');
+  });
+}
+
+// ── Send Queue ──
+// Browsers block multiple window.open() calls — only the first tab opens.
+// Solution: show a queue sheet, open WhatsApp for one guest at a time,
+// user taps "Sent ✓ → Next" to proceed to the next guest.
+
+let sendQueue = [];
+let sendQueueIndex = 0;
+let sendQueueEvent = null;
+
+function startSendQueue(guests, ev) {
+  if(!guests.length) { toast('No guests selected'); return; }
+  sendQueue = guests;
+  sendQueueIndex = 0;
+  sendQueueEvent = ev;
+  showQueueSheet();
+}
+
+function showQueueSheet() {
+  const g = sendQueue[sendQueueIndex];
+  const ev = sendQueueEvent;
+  const total = sendQueue.length;
+  const current = sendQueueIndex + 1;
+  const progress = Math.round((sendQueueIndex / total) * 100);
+  const isDone = sendQueueIndex >= total;
+
+  if(isDone) {
+    openSheet('All done! 🎉', `
+      <div style="text-align:center;padding:20px 0">
+        <div style="font-size:56px;margin-bottom:12px">✅</div>
+        <div style="font-size:18px;font-weight:700;color:#2d2a26;margin-bottom:6px">All ${total} messages sent!</div>
+        <div style="font-size:14px;color:#888;margin-bottom:24px">Every selected guest has been messaged on WhatsApp.</div>
+        <button class="btn btn-primary btn-full" onclick="closeSheetDirect();render()">Done</button>
+      </div>
+    `);
+    return;
+  }
+
+  const msg = buildMsg(g, ev);
+  const link = waLink(g.phone, msg);
+
+  openSheet(`Send reminders (${current} of ${total})`, `
+    <!-- Progress bar -->
+    <div style="background:#f0ece8;border-radius:20px;height:6px;margin-bottom:20px;overflow:hidden">
+      <div style="background:#25d366;height:100%;width:${progress}%;border-radius:20px;transition:width .3s"></div>
+    </div>
+
+    <!-- Guest card -->
+    <div style="display:flex;align-items:center;gap:14px;background:#f8f5f0;border-radius:12px;padding:14px;margin-bottom:16px">
+      <div class="avatar" style="width:48px;height:48px;font-size:18px">${initials(g.name)}</div>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:16px">${g.name}</div>
+        <div style="font-size:13px;color:#888;margin-top:2px">${g.phone}</div>
+        <span class="badge badge-${g.relation}" style="margin-top:4px;display:inline-block">${g.relation}</span>
+      </div>
+      <div style="text-align:right;font-size:12px;color:#aaa">${current} / ${total}</div>
+    </div>
+
+    <!-- Message preview snippet -->
+    <div style="background:#e5ddd5;border-radius:10px;padding:12px;margin-bottom:20px;font-size:12px;color:#555;line-height:1.5;max-height:90px;overflow:hidden;position:relative">
+      ${msg.replace(/\n/g,'<br>').replace(/\*(.*?)\*/g,'<strong>$1</strong>').slice(0,220)}…
+      <div style="position:absolute;bottom:0;left:0;right:0;height:30px;background:linear-gradient(transparent,#e5ddd5)"></div>
+    </div>
+
+    <!-- Action buttons -->
+    <a href="${link}" target="_blank" onclick="onWhatsAppOpened()" style="text-decoration:none">
+      <button class="btn btn-green btn-full" style="font-size:15px;padding:14px;margin-bottom:10px" id="openWABtn">
+        <i class="ti ti-brand-whatsapp"></i> Open WhatsApp for ${g.name.split(' ')[0]}
+      </button>
+    </a>
+
+    <button class="btn btn-full" id="nextBtn"
+      style="font-size:14px;padding:12px;background:#f0ece8;color:#6b4a3a;border:none;border-radius:10px;cursor:pointer;display:none"
+      onclick="nextInQueue()">
+      Sent ✓ &nbsp;→&nbsp; Next guest
+    </button>
+
+    <button class="btn btn-full"
+      style="font-size:13px;padding:10px;background:transparent;color:#aaa;border:none;cursor:pointer;margin-top:6px"
+      onclick="skipInQueue()">
+      Skip ${g.name.split(' ')[0]}
+    </button>
+
+    <!-- Remaining list -->
+    ${total - current > 0 ? `
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid #f0ece8">
+      <div style="font-size:11px;color:#aaa;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Up next</div>
+      ${sendQueue.slice(sendQueueIndex+1, sendQueueIndex+4).map(ug => `
+        <div style="display:flex;align-items:center;gap:10px;padding:6px 0">
+          <div class="avatar" style="width:28px;height:28px;font-size:11px">${initials(ug.name)}</div>
+          <span style="font-size:13px;color:#888">${ug.name}</span>
+        </div>`).join('')}
+      ${total - current > 3 ? `<div style="font-size:12px;color:#bbb;padding:4px 0">+ ${total - current - 3} more</div>` : ''}
+    </div>` : ''}
+  `);
+}
+
+function onWhatsAppOpened() {
+  // Show the "Sent → Next" button after WhatsApp link is tapped
+  setTimeout(() => {
+    const btn = document.getElementById('nextBtn');
+    if(btn) {
+      btn.style.display = 'block';
+      btn.style.animation = 'none';
+    }
+  }, 800);
+}
+
+function nextInQueue() {
+  sendQueueIndex++;
+  showQueueSheet();
+}
+
+function skipInQueue() {
+  sendQueueIndex++;
+  showQueueSheet();
+}
+
 function sendAll() {
   const ev = eventById(state.selectedEventId) || state.events[0];
   if(!ev) { toast('Please select an event'); return; }
   const targets = state.selectedGuests.length
     ? state.guests.filter(g => state.selectedGuests.includes(g.id))
     : state.guests;
-  if(!targets.length) { toast('No guests selected'); return; }
-  targets.forEach((g, i) => {
-    setTimeout(() => window.open(waLink(g.phone, buildMsg(g, ev)), '_blank'), i * 700);
-  });
-  toast(`<i class="ti ti-brand-whatsapp"></i> Opening WhatsApp for ${targets.length} guest${targets.length>1?'s':''}…`, 'green');
+  startSendQueue(targets, ev);
 }
 
 function sendEventToAll(eventId) {
   const ev = eventById(eventId);
-  state.guests.forEach((g, i) => {
-    setTimeout(() => window.open(waLink(g.phone, buildMsg(g, ev)), '_blank'), i * 700);
-  });
-  toast(`<i class="ti ti-brand-whatsapp"></i> Sending to all ${state.guests.length} guests`, 'green');
+  startSendQueue([...state.guests], ev);
 }
 
 function sendReminderNow(id) {
   const r = state.reminders.find(x=>x.id===id);
   const g = guestById(r.guestId);
   const ev = eventById(r.eventId);
-  window.open(waLink(g.phone, buildMsg(g, ev)), '_blank');
   r.status = 'sent';
   saveState();
-  toast('<i class="ti ti-check"></i> Opened WhatsApp for ' + g.name, 'green');
-  render();
+  startSendQueue([g], ev);
 }
 
 // ──────── SHEETS — Add / Edit ────────
@@ -907,9 +1155,8 @@ function quickSendWA(id) {
   const g = guestById(id);
   const ev = eventById(state.selectedEventId) || state.events[0];
   if(!ev) { toast('Please add an event first'); return; }
-  window.open(waLink(g.phone, buildMsg(g, ev)), '_blank');
-  toast('<i class="ti ti-brand-whatsapp"></i> Opening WhatsApp…', 'green');
   closeSheetDirect();
+  setTimeout(() => startSendQueue([g], ev), 350);
 }
 function toggleRsvp(id) {
   const g = guestById(id);
@@ -1085,7 +1332,7 @@ window.addEventListener('appinstalled', () => {
 
 // ──────── SERVICE WORKER ────────
 if('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./')
+  navigator.serviceWorker.register('./sw.js')
     .then(reg => {
       console.log('SW registered', reg.scope);
       // Check reminders on load
