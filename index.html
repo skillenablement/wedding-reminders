@@ -1085,7 +1085,7 @@ window.addEventListener('appinstalled', () => {
 
 // ──────── SERVICE WORKER ────────
 if('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js')
+  navigator.serviceWorker.register('./')
     .then(reg => {
       console.log('SW registered', reg.scope);
       // Check reminders on load
